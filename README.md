@@ -162,4 +162,4 @@ Model weights are subject to their respective licenses:
 
 This system is founded on the principle that **all human‑computer interaction can be captured as structured text**, enabling the development of long‑lived, self‑improving AI systems.
 
-*Last updated: June 2025*
+*Last updated: June 2025 - Git hook test*
