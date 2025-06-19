@@ -108,7 +108,7 @@ agent/
 ### Installation
 
 ```bash
-git clone https://github.com/your-org/agent-cag
+git clone https://github.com/prettygoodapps/agent-cag
 cd agent-cag
 docker-compose up --build
 ```
@@ -161,3 +161,5 @@ Model weights are subject to their respective licenses:
 ## Design Philosophy
 
 This system is founded on the principle that **all human‑computer interaction can be captured as structured text**, enabling the development of long‑lived, self‑improving AI systems.
+
+*Last updated: June 2025*
