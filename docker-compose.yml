@@ -136,7 +136,7 @@ services:
     environment:
       - PYTHONPATH=/app
       - PIPER_MODEL=en_US-lessac-medium
-      - SARDAUKAR_TRANSLATOR_URL=http://sardaukar-translator:8004
+      - SARDAUKAR_TRANSLATOR_URL=http://sardaukar-translator:8000
     volumes:
       - ./tts:/app
       - ./tts/models:/app/models
