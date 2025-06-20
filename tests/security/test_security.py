@@ -10,9 +10,16 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 
 # Mock dependencies before importing
-with patch('api.main.httpx'), \
-     patch('api.main.DatabaseManager'), \
-     patch('api.main.prometheus_client'):
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+with patch('httpx'), \
+     patch('api.database.DatabaseManager'), \
+     patch('prometheus_client'):
     from api.main import app
 
 

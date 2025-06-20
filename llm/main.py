@@ -90,7 +90,11 @@ def initialize_llm():
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     OLLAMA_MODE = os.getenv("OLLAMA_MODE", "container")
     
-    # Use the OLLAMA_HOST as configured from environment variables
+    # For local mode, dynamically detect the host gateway IP
+    if OLLAMA_MODE == "local":
+        gateway_ip = get_host_gateway_ip()
+        OLLAMA_HOST = f"http://{gateway_ip}:11434"
+        logger.info(f"Local mode detected, using dynamic host: {OLLAMA_HOST}")
     
     logger.info(f"Initializing LLM service with model: {MODEL_NAME}")
     logger.info(f"Ollama host: {OLLAMA_HOST} (mode: {OLLAMA_MODE})")

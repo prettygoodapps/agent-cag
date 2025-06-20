@@ -12,10 +12,17 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import json
 
 # Mock dependencies before importing
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 with patch('httpx.AsyncClient'), \
-     patch('api.database.duckdb'), \
-     patch('api.database.chromadb', create=True), \
-     patch('api.database.neo4j', create=True):
+     patch('duckdb'), \
+     patch('chromadb', create=True), \
+     patch('neo4j', create=True):
     from api.database import DatabaseManager
     from api.models import QueryRequest, ConversationEntry
 
@@ -80,8 +87,8 @@ class TestDeploymentProfiles:
         mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
         mock_neo4j_driver.session.return_value.__exit__.return_value = None
         
-        with patch('api.database.chromadb.HttpClient', return_value=mock_chroma_client), \
-             patch('api.database.GraphDatabase.driver', return_value=mock_neo4j_driver), \
+        with patch('chromadb.HttpClient', return_value=mock_chroma_client), \
+             patch('neo4j.GraphDatabase.driver', return_value=mock_neo4j_driver), \
              patch.dict('os.environ', {
                  'CHROMA_HOST': 'localhost',
                  'CHROMA_PORT': '8005',
@@ -301,7 +308,7 @@ class TestEndToEndWorkflows:
         # Mock database for conversation history
         db_manager = DatabaseManager("lightweight")
         
-        with patch('api.database.duckdb.connect') as mock_connect:
+        with patch('duckdb.connect') as mock_connect:
             mock_conn = MagicMock()
             mock_connect.return_value = mock_conn
             
@@ -431,7 +438,7 @@ class TestErrorRecoveryWorkflows:
         """Test recovery when database fails."""
         db_manager = DatabaseManager("lightweight")
         
-        with patch('api.database.duckdb.connect', side_effect=Exception("Database connection failed")):
+        with patch('duckdb.connect', side_effect=Exception("Database connection failed")):
             # Should handle database failure gracefully
             try:
                 await db_manager.initialize()
@@ -476,7 +483,7 @@ class TestDataConsistency:
         """Test consistency between stored queries and responses."""
         db_manager = DatabaseManager("lightweight")
         
-        with patch('api.database.duckdb.connect') as mock_connect:
+        with patch('duckdb.connect') as mock_connect:
             mock_conn = MagicMock()
             mock_connect.return_value = mock_conn
             
@@ -546,7 +553,7 @@ class TestDataConsistency:
         """Test data consistency under concurrent access."""
         db_manager = DatabaseManager("lightweight")
         
-        with patch('api.database.duckdb.connect') as mock_connect:
+        with patch('duckdb.connect') as mock_connect:
             mock_conn = MagicMock()
             mock_connect.return_value = mock_conn
             
