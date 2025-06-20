@@ -1,0 +1,21 @@
+version: '3.9'
+
+# Override configuration for local Ollama mode
+# Use this when you have Ollama running on your host machine
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+services:
+  # Remove the containerized Ollama service
+  ollama:
+    deploy:
+      replicas: 0
+
+  # Update LLM service for local Ollama
+  llm:
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_NAME=llama3
+      - MODEL_PATH=/app/models
+      - OLLAMA_HOST=http://192.168.1.37:11434
+      - OLLAMA_MODE=local
+    depends_on: []

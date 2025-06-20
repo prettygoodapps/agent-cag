@@ -1,0 +1,441 @@
+name: Comprehensive Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  PYTHONPATH: .
+  TESTING: true
+  LOG_LEVEL: INFO
+  DEPLOYMENT_PROFILE: lightweight
+  DATABASE_URL: ":memory:"
+
+jobs:
+  # Code Quality Checks
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run code quality checks
+      run: |
+        python run_tests.py --code-quality --output code_quality_report.json
+    
+    - name: Upload code quality report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: code-quality-report
+        path: code_quality_report.json
+
+  # Unit Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+    name: Unit Tests (Python ${{ matrix.python-version }})
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.python-version }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run unit tests
+      run: |
+        python run_tests.py --unit --output unit_test_report_${{ matrix.python-version }}.json
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+    
+    - name: Upload test report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: unit-test-report-${{ matrix.python-version }}
+        path: unit_test_report_${{ matrix.python-version }}.json
+    
+    - name: Upload coverage HTML
+      uses: actions/upload-artifact@v3
+      if: matrix.python-version == '3.11'
+      with:
+        name: coverage-html
+        path: htmlcov/
+
+  # Security Tests
+  security-tests:
+    runs-on: ubuntu-latest
+    name: Security Tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Run security tests
+      run: |
+        python run_tests.py --security --output security_test_report.json
+    
+    - name: Upload security report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-test-report
+        path: security_test_report.json
+
+  # Integration Tests
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Integration Tests
+    
+    services:
+      # Add services needed for integration tests
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,full]"
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Start services
+      run: |
+        docker-compose -f docker-compose.local.yml up -d
+        sleep 30  # Wait for services to be ready
+    
+    - name: Run integration tests
+      run: |
+        python run_tests.py --integration --output integration_test_report.json
+    
+    - name: Stop services
+      if: always()
+      run: |
+        docker-compose -f docker-compose.local.yml down
+    
+    - name: Upload integration test report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: integration-test-report
+        path: integration_test_report.json
+
+  # Monitoring Tests
+  monitoring-tests:
+    runs-on: ubuntu-latest
+    name: Monitoring Tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,monitoring]"
+    
+    - name: Run monitoring tests
+      run: |
+        python run_tests.py --monitoring --output monitoring_test_report.json
+    
+    - name: Upload monitoring test report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: monitoring-test-report
+        path: monitoring_test_report.json
+
+  # Load Tests (only on main branch and scheduled runs)
+  load-tests:
+    runs-on: ubuntu-latest
+    name: Load Tests
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Start services for load testing
+      run: |
+        docker-compose -f docker-compose.local.yml up -d
+        sleep 60  # Wait longer for services to be fully ready
+    
+    - name: Run load tests
+      run: |
+        python run_tests.py --load --load-users 20 --load-duration 2m --output load_test_report.json
+    
+    - name: Stop services
+      if: always()
+      run: |
+        docker-compose -f docker-compose.local.yml down
+    
+    - name: Upload load test report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: load-test-report
+        path: load_test_report.json
+
+  # Comprehensive Test Report
+  test-summary:
+    runs-on: ubuntu-latest
+    name: Test Summary
+    needs: [code-quality, unit-tests, security-tests, integration-tests, monitoring-tests]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download all test reports
+      uses: actions/download-artifact@v3
+      with:
+        path: test-reports
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install jq
+    
+    - name: Generate test summary
+      run: |
+        echo "# Test Summary" > test_summary.md
+        echo "" >> test_summary.md
+        echo "## Test Results" >> test_summary.md
+        echo "" >> test_summary.md
+        
+        # Process each test report
+        for report_dir in test-reports/*/; do
+          if [ -d "$report_dir" ]; then
+            report_name=$(basename "$report_dir")
+            echo "### $report_name" >> test_summary.md
+            
+            for report_file in "$report_dir"/*.json; do
+              if [ -f "$report_file" ]; then
+                echo "Processing $report_file"
+                # Extract summary information (this would need proper JSON parsing)
+                echo "- Report: $(basename "$report_file")" >> test_summary.md
+              fi
+            done
+            echo "" >> test_summary.md
+          fi
+        done
+    
+    - name: Upload test summary
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-summary
+        path: test_summary.md
+    
+    - name: Comment PR with test results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          if (fs.existsSync('test_summary.md')) {
+            const summary = fs.readFileSync('test_summary.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+          }
+
+  # Docker Build Test
+  docker-build:
+    runs-on: ubuntu-latest
+    name: Docker Build Test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build API service
+      run: |
+        docker build -t agent-cag-api:test ./api
+    
+    - name: Build ASR service
+      run: |
+        docker build -t agent-cag-asr:test ./asr
+    
+    - name: Build LLM service
+      run: |
+        docker build -t agent-cag-llm:test ./llm
+    
+    - name: Build TTS service
+      run: |
+        docker build -t agent-cag-tts:test ./tts
+    
+    - name: Test docker-compose
+      run: |
+        docker-compose -f docker-compose.local.yml config
+        echo "Docker Compose configuration is valid"
+
+  # Deployment Readiness Check
+  deployment-check:
+    runs-on: ubuntu-latest
+    name: Deployment Readiness
+    needs: [unit-tests, integration-tests, security-tests, docker-build]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Check deployment readiness
+      run: |
+        echo "✅ All tests passed"
+        echo "✅ Docker builds successful"
+        echo "✅ Security tests passed"
+        echo "🚀 Ready for deployment"
+    
+    - name: Create deployment artifact
+      run: |
+        echo "DEPLOYMENT_READY=true" > deployment.env
+        echo "BUILD_SHA=${{ github.sha }}" >> deployment.env
+        echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> deployment.env
+    
+    - name: Upload deployment artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: deployment-ready
+        path: deployment.env

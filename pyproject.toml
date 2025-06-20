@@ -1,0 +1,218 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-cag"
+description = "Context-Aware Graph AI Agent System"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Agent CAG Team"},
+]
+keywords = ["ai", "agent", "nlp", "graph", "context-aware"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dynamic = ["version"]
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.25.0",
+    "prometheus-client>=0.17.0",
+    "duckdb>=0.9.0",
+]
+
+[project.optional-dependencies]
+full = [
+    "chromadb>=0.4.0",
+    "neo4j>=5.0.0",
+]
+asr = [
+    "openai-whisper>=20231117",
+    "torch>=2.0.0",
+    "soundfile>=0.12.0",
+    "librosa>=0.10.0",
+]
+tts = [
+    "piper-tts>=1.2.0",
+    "soundfile>=0.12.0",
+]
+llm = [
+    "ollama>=0.1.0",
+]
+monitoring = [
+    "grafana-client>=3.5.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.0.0",
+    "pytest-timeout>=2.1.0",
+    "httpx>=0.25.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "bandit>=1.7.0",
+    "safety>=2.0.0",
+    "locust>=2.0.0",
+    "psutil>=5.9.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/agent-cag/agent-cag"
+Documentation = "https://agent-cag.readthedocs.io/"
+Repository = "https://github.com/agent-cag/agent-cag.git"
+"Bug Tracker" = "https://github.com/agent-cag/agent-cag/issues"
+
+[project.scripts]
+agent-cag = "api.main:main"
+run-tests = "run_tests:main"
+
+[tool.setuptools_scm]
+write_to = "agent_cag/_version.py"
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | htmlcov
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "whisper.*",
+    "torch.*",
+    "soundfile.*",
+    "librosa.*",
+    "chromadb.*",
+    "neo4j.*",
+    "duckdb.*",
+    "prometheus_client.*",
+    "locust.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "integration_tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+    "--showlocals",
+    "--durations=10",
+    "--color=yes",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "security: Security tests",
+    "monitoring: Monitoring tests",
+    "load: Load tests",
+    "slow: Slow running tests",
+    "requires_services: Tests that require running services",
+    "requires_docker: Tests that require Docker",
+    "requires_gpu: Tests that require GPU",
+    "smoke: Smoke tests for quick validation",
+]
+asyncio_mode = "auto"
+timeout = 300
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::UserWarning:whisper.*",
+    "ignore::UserWarning:torch.*",
+    "ignore::UserWarning:transformers.*",
+]
+
+[tool.coverage.run]
+source = ["api", "asr", "llm", "tts"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/env/*",
+    "*/.venv/*",
+    "setup.py",
+    "conftest.py",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+ignore_errors = true
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.bandit]
+exclude_dirs = ["tests", "integration_tests", ".venv", "venv", "env"]
+skips = ["B101", "B601"]  # Skip assert_used and shell_injection_process_args
+
+[tool.bandit.assert_used]
+skips = ["*_test.py", "test_*.py"]

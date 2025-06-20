@@ -1,9 +1,172 @@
 version: '3.9'
+
+networks:
+  agent-network:
+    driver: bridge
+
+volumes:
+  duckdb_data:
+    driver: local
+  ollama_data:
+    driver: local
+
 services:
+  # API Gateway / Orchestration Service
   api:
-    image: python:3.10-slim
-    working_dir: /app
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: agent-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - DEPLOYMENT_PROFILE=lightweight
+      - ASR_SERVICE_URL=http://asr:8001
+      - LLM_SERVICE_URL=http://llm:8002
+      - TTS_SERVICE_URL=http://tts:8003
+      - SARDAUKAR_TRANSLATOR_URL=http://sardaukar-translator:8004
+      - SARDAUKAR_ENABLED=false
     volumes:
+      - duckdb_data:/app/data
       - ./api:/app
-    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
-  # Additional service stubs can be added here
+    depends_on:
+      - asr
+      - llm
+      - tts
+      - sardaukar-translator
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Automatic Speech Recognition Service
+  asr:
+    build:
+      context: ./asr
+      dockerfile: Dockerfile
+    container_name: agent-asr
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app
+      - WHISPER_MODEL=base
+    volumes:
+      - ./asr:/app
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Ollama Service (Containerized LLM Backend)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agent-ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - agent-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Large Language Model Service
+  llm:
+    build:
+      context: ./llm
+      dockerfile: Dockerfile
+    container_name: agent-llm
+    ports:
+      - "8002:8002"
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_NAME=llama3
+      - MODEL_PATH=/app/models
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODE=container
+    volumes:
+      - ./llm:/app
+      - ./llm/models:/app/models
+    depends_on:
+      - ollama
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Text-to-Speech Service
+  tts:
+    build:
+      context: ./tts
+      dockerfile: Dockerfile
+    container_name: agent-tts
+    ports:
+      - "8003:8003"
+    environment:
+      - PYTHONPATH=/app
+      - PIPER_MODEL=en_US-lessac-medium
+      - SARDAUKAR_TRANSLATOR_URL=http://sardaukar-translator:8004
+    volumes:
+      - ./tts:/app
+      - ./tts/models:/app/models
+    depends_on:
+      - sardaukar-translator
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Sardaukar Translator Service
+  sardaukar-translator:
+    build:
+      context: ../sardaukar
+      dockerfile: Dockerfile
+    container_name: sardaukar-translator
+    ports:
+      - "8004:8000"
+    environment:
+      - PYTHONPATH=/app
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

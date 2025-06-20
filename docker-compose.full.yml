@@ -1,0 +1,79 @@
+version: '3.9'
+
+volumes:
+  chroma_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+
+services:
+  # Override API service for full profile
+  api:
+    environment:
+      - PYTHONPATH=/app
+      - DEPLOYMENT_PROFILE=full
+      - ASR_SERVICE_URL=http://asr:8001
+      - LLM_SERVICE_URL=http://llm:8002
+      - TTS_SERVICE_URL=http://tts:8003
+      - SARDAUKAR_TRANSLATOR_URL=http://sardaukar-translator:8004
+      - SARDAUKAR_ENABLED=false
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8005
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
+    depends_on:
+      - asr
+      - llm
+      - tts
+      - sardaukar-translator
+      - chroma
+      - neo4j
+
+  # ChromaDB Vector Database
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: agent-chroma
+    ports:
+      - "8005:8000"
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: agent-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - agent-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

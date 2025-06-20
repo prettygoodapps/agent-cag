@@ -1,0 +1,51 @@
+[flake8]
+# Flake8 configuration for Agent CAG
+
+# Maximum line length
+max-line-length = 88
+
+# Exclude directories and files
+exclude = 
+    .git,
+    __pycache__,
+    .pytest_cache,
+    .mypy_cache,
+    htmlcov,
+    build,
+    dist,
+    *.egg-info,
+    .venv,
+    venv,
+    env,
+    .env
+
+# Ignore specific error codes
+ignore = 
+    E203,  # whitespace before ':'
+    E501,  # line too long (handled by black)
+    W503,  # line break before binary operator
+    W504,  # line break after binary operator
+    F401,  # imported but unused (handled by autoflake)
+    F841,  # local variable assigned but never used
+
+# Select specific error codes to check
+select = E,W,F,C
+
+# Maximum complexity
+max-complexity = 10
+
+# Per-file ignores
+per-file-ignores =
+    __init__.py:F401
+    tests/*:F401,F811
+    */test_*.py:F401,F811
+    conftest.py:F401
+
+# Show source code for each error
+show-source = True
+
+# Show pep8 violation statistics
+statistics = True
+
+# Count errors and warnings
+count = True
