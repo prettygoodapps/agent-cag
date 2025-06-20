@@ -59,12 +59,29 @@ celerybeat-schedule
 
 # Environments
 .env
+.env.*
+.env.local
+.env.*.local
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Environment configuration files (contain sensitive data)
+.env.development
+.env.production
+.env.groq
+.env.custom
+
+# Configuration backups
+config_backup_*/
+
+# Processed configuration files
+docker-compose.processed.yml
+monitoring/prometheus.processed.yml
+*.processed.yml
 
 # IDE files
 .vscode/
@@ -109,3 +126,26 @@ test-results/
 # Build artifacts
 *.tar.gz
 *.zip
+
+# Additional sensitive files
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+auth/
+tokens/
+
+# Backup files that might contain sensitive data
+*.bak
+*.backup
+*_backup
+config_backup_*
+
+# Runtime data that might contain sensitive information
+data/
+storage/
+uploads/
+downloads/
+cache/

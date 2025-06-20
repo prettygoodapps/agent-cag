@@ -171,7 +171,7 @@ def initialize_ollama():
 
 def initialize_openai_compatible():
     """Initialize OpenAI-compatible client."""
-    global OPENAI_CLIENT
+    global OPENAI_CLIENT, MODEL_NAME
     
     api_key = os.getenv("LLM_API_KEY")
     if not api_key:

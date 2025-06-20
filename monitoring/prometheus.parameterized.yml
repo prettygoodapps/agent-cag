@@ -1,6 +1,6 @@
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: ${METRICS_SCRAPE_INTERVAL:-15s}
+  evaluation_interval: ${METRICS_SCRAPE_INTERVAL:-15s}
 
 rule_files:
   # - "first_rules.yml"
@@ -10,47 +10,47 @@ scrape_configs:
   # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['localhost:${PROMETHEUS_PORT:-9090}']
 
   # Agent CAG API Service
   - job_name: 'agent-api'
     static_configs:
-      - targets: ['api:8000']
+      - targets: ['api:${API_PORT:-8000}']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: ${SERVICE_SCRAPE_INTERVAL:-10s}
 
   # ASR Service
   - job_name: 'agent-asr'
     static_configs:
-      - targets: ['asr:8001']
+      - targets: ['asr:${ASR_PORT:-8001}']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: ${SERVICE_SCRAPE_INTERVAL:-10s}
 
   # LLM Service
   - job_name: 'agent-llm'
     static_configs:
-      - targets: ['llm:8002']
+      - targets: ['llm:${LLM_PORT:-8002}']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: ${SERVICE_SCRAPE_INTERVAL:-10s}
 
   # TTS Service
   - job_name: 'agent-tts'
     static_configs:
-      - targets: ['tts:8003']
+      - targets: ['tts:${TTS_PORT:-8003}']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: ${SERVICE_SCRAPE_INTERVAL:-10s}
 
   # Sardaukar Translator Service
   - job_name: 'sardaukar-translator'
     static_configs:
-      - targets: ['sardaukar-translator:8000']
+      - targets: ['sardaukar-translator:${SARDAUKAR_PORT:-8000}']
     metrics_path: '/api/metrics'
-    scrape_interval: 10s
+    scrape_interval: ${SERVICE_SCRAPE_INTERVAL:-10s}
 
   # ChromaDB (when using full profile)
   - job_name: 'chroma'
     static_configs:
-      - targets: ['chroma:8000']
+      - targets: ['chroma:${CHROMA_PORT:-8000}']
     metrics_path: '/api/v1/metrics'
     scrape_interval: 30s
 

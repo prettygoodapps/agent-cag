@@ -239,7 +239,7 @@ Based on the analysis, the checker provides specific recommendations:
 ### Example Output
 
 ```
-🚀 AGENT CAG SYSTEM REQUIREMENTS REPORT
+🚀 AGENT CAG SYSTEM REQUIREMENTS REPORT  (EXAMPLE)
 ================================================================================
 
 📊 SYSTEM INFORMATION
