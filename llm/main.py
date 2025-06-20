@@ -1,7 +1,8 @@
 """
 LLM (Large Language Model) Service
 
-Provides text generation capabilities using local LLM models.
+Provides text generation capabilities using local LLM models or remote APIs.
+Supports Ollama (local), OpenAI, Groq, and other OpenAI-compatible APIs.
 """
 
 import os
@@ -9,12 +10,15 @@ import logging
 import socket
 import subprocess
 from typing import Dict, Any, Optional
+from enum import Enum
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, generate_latest
 from prometheus_client import start_http_server
 import ollama
+import openai
+import httpx
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +33,18 @@ ERROR_COUNT = Counter("llm_errors_total", "Total LLM errors", ["error_type"])
 
 # Global configuration
 MODEL_NAME = None
+LLM_PROVIDER = None
 OLLAMA_CLIENT = None
+OPENAI_CLIENT = None
+
+
+class LLMProvider(str, Enum):
+    """Supported LLM providers."""
+    OLLAMA = "ollama"
+    OPENAI = "openai"
+    GROQ = "groq"
+    ANTHROPIC = "anthropic"
+    GENERIC_OPENAI = "generic_openai"
 
 
 class GenerationRequest(BaseModel):
@@ -92,9 +107,28 @@ def get_host_gateway_ip():
 
 def initialize_llm():
     """Initialize the LLM model."""
-    global MODEL_NAME, OLLAMA_CLIENT
+    global MODEL_NAME, LLM_PROVIDER, OLLAMA_CLIENT, OPENAI_CLIENT
 
     MODEL_NAME = os.getenv("MODEL_NAME", "llama3")
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
+    
+    logger.info(f"Initializing LLM service with provider: {LLM_PROVIDER}")
+    logger.info(f"Model: {MODEL_NAME}")
+
+    if LLM_PROVIDER == LLMProvider.OLLAMA:
+        initialize_ollama()
+    elif LLM_PROVIDER in [LLMProvider.OPENAI, LLMProvider.GROQ, LLMProvider.ANTHROPIC, LLMProvider.GENERIC_OPENAI]:
+        initialize_openai_compatible()
+    else:
+        raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}")
+
+    logger.info("LLM service initialized successfully")
+
+
+def initialize_ollama():
+    """Initialize Ollama client."""
+    global OLLAMA_CLIENT
+    
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     OLLAMA_MODE = os.getenv("OLLAMA_MODE", "container")
 
@@ -104,7 +138,6 @@ def initialize_llm():
         OLLAMA_HOST = f"http://{gateway_ip}:11434"
         logger.info(f"Local mode detected, using dynamic host: {OLLAMA_HOST}")
 
-    logger.info(f"Initializing LLM service with model: {MODEL_NAME}")
     logger.info(f"Ollama host: {OLLAMA_HOST} (mode: {OLLAMA_MODE})")
 
     try:
@@ -128,11 +161,50 @@ def initialize_llm():
         except Exception as e:
             logger.warning(f"Could not check/pull model: {e}")
 
-        logger.info("LLM service initialized successfully")
-
     except Exception as e:
-        logger.error(f"Failed to initialize LLM service: {e}")
+        logger.error(f"Failed to initialize Ollama: {e}")
         raise
+
+
+def initialize_openai_compatible():
+    """Initialize OpenAI-compatible client."""
+    global OPENAI_CLIENT
+    
+    api_key = os.getenv("LLM_API_KEY")
+    if not api_key:
+        raise ValueError("LLM_API_KEY environment variable is required for remote APIs")
+    
+    base_url = None
+    
+    # Set provider-specific configurations
+    if LLM_PROVIDER == LLMProvider.OPENAI:
+        base_url = "https://api.openai.com/v1"
+        if not MODEL_NAME or MODEL_NAME == "llama3":
+            MODEL_NAME = "gpt-3.5-turbo"
+    elif LLM_PROVIDER == LLMProvider.GROQ:
+        base_url = "https://api.groq.com/openai/v1"
+        if not MODEL_NAME or MODEL_NAME in ["llama3", "phi3:mini"]:
+            MODEL_NAME = "llama3-8b-8192"  # Free Groq model
+    elif LLM_PROVIDER == LLMProvider.GENERIC_OPENAI:
+        base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+    
+    logger.info(f"Using API endpoint: {base_url}")
+    logger.info(f"Model: {MODEL_NAME}")
+    
+    OPENAI_CLIENT = openai.OpenAI(
+        api_key=api_key,
+        base_url=base_url
+    )
+    
+    # Test the connection
+    try:
+        # Try to list models or make a simple request
+        logger.info("Testing API connection...")
+        # This will raise an exception if the API key is invalid
+        models = OPENAI_CLIENT.models.list()
+        logger.info("API connection successful")
+    except Exception as e:
+        logger.warning(f"Could not test API connection: {e}")
 
 
 # Initialize FastAPI app
@@ -163,17 +235,26 @@ async def startup_event():
 async def health_check():
     """Health check endpoint."""
     try:
-        if OLLAMA_CLIENT is None:
-            raise Exception("Ollama client not initialized")
-
-        # Test connection to Ollama
-        models = OLLAMA_CLIENT.list()
+        if LLM_PROVIDER == LLMProvider.OLLAMA:
+            if OLLAMA_CLIENT is None:
+                raise Exception("Ollama client not initialized")
+            
+            # Test connection to Ollama
+            models = OLLAMA_CLIENT.list()
+            available_models = [model["name"] for model in models["models"]]
+        else:
+            if OPENAI_CLIENT is None:
+                raise Exception("OpenAI client not initialized")
+            
+            # For API providers, we assume the model is available
+            available_models = [MODEL_NAME]
 
         return {
             "status": "healthy",
             "service": "agent-llm",
+            "provider": LLM_PROVIDER,
             "model": MODEL_NAME,
-            "available_models": [model["name"] for model in models["models"]],
+            "available_models": available_models,
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -193,19 +274,22 @@ async def generate_text(request: GenerationRequest):
         REQUEST_COUNT.inc()
 
         with REQUEST_DURATION.time():
-            # Prepare the prompt
-            if request.system_prompt:
-                full_prompt = f"System: {request.system_prompt}\n\nUser: {request.text}\n\nAssistant:"
+            if LLM_PROVIDER == LLMProvider.OLLAMA:
+                response = await generate_with_ollama(
+                    prompt=request.text,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    system_prompt=request.system_prompt,
+                )
             else:
-                full_prompt = request.text
-
-            # Generate response using Ollama
-            response = await generate_with_ollama(
-                prompt=full_prompt,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                top_p=request.top_p,
-            )
+                response = await generate_with_openai_compatible(
+                    prompt=request.text,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    system_prompt=request.system_prompt,
+                )
 
             GENERATION_COUNT.inc()
             TOKEN_COUNT.inc(response["tokens_used"])
@@ -224,17 +308,24 @@ async def generate_text(request: GenerationRequest):
 
 
 async def generate_with_ollama(
-    prompt: str, max_tokens: int = 1000, temperature: float = 0.7, top_p: float = 0.9
+    prompt: str, max_tokens: int = 1000, temperature: float = 0.7, 
+    top_p: float = 0.9, system_prompt: Optional[str] = None
 ) -> Dict[str, Any]:
     """Generate text using Ollama."""
     try:
         if OLLAMA_CLIENT is None:
             raise Exception("Ollama client not initialized")
 
+        # Prepare the prompt
+        if system_prompt:
+            full_prompt = f"System: {system_prompt}\n\nUser: {prompt}\n\nAssistant:"
+        else:
+            full_prompt = prompt
+
         # Generate response
         response = OLLAMA_CLIENT.generate(
             model=MODEL_NAME,
-            prompt=prompt,
+            prompt=full_prompt,
             options={
                 "num_predict": max_tokens,
                 "temperature": temperature,
@@ -252,6 +343,7 @@ async def generate_with_ollama(
             "text": generated_text,
             "tokens_used": int(tokens_used),
             "metadata": {
+                "provider": "ollama",
                 "model": MODEL_NAME,
                 "done": response.get("done", True),
                 "total_duration": response.get("total_duration", 0),
@@ -267,7 +359,59 @@ async def generate_with_ollama(
         return {
             "text": "I apologize, but I'm currently unable to process your request. The language model service is experiencing issues.",
             "tokens_used": 20,
-            "metadata": {"error": str(e), "fallback": True},
+            "metadata": {"error": str(e), "fallback": True, "provider": "ollama"},
+        }
+
+
+async def generate_with_openai_compatible(
+    prompt: str, max_tokens: int = 1000, temperature: float = 0.7, 
+    top_p: float = 0.9, system_prompt: Optional[str] = None
+) -> Dict[str, Any]:
+    """Generate text using OpenAI-compatible API."""
+    try:
+        if OPENAI_CLIENT is None:
+            raise Exception("OpenAI client not initialized")
+
+        # Prepare messages
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        else:
+            messages.append({"role": "system", "content": "You are a helpful AI assistant."})
+        
+        messages.append({"role": "user", "content": prompt})
+
+        # Generate response
+        response = OPENAI_CLIENT.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+        generated_text = response.choices[0].message.content.strip()
+        tokens_used = response.usage.total_tokens if response.usage else len(generated_text.split()) * 1.3
+
+        return {
+            "text": generated_text,
+            "tokens_used": int(tokens_used),
+            "metadata": {
+                "provider": LLM_PROVIDER,
+                "model": MODEL_NAME,
+                "finish_reason": response.choices[0].finish_reason,
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"OpenAI-compatible generation failed: {e}")
+        # Fallback to a simple response
+        return {
+            "text": "I apologize, but I'm currently unable to process your request. The language model service is experiencing issues.",
+            "tokens_used": 20,
+            "metadata": {"error": str(e), "fallback": True, "provider": LLM_PROVIDER},
         }
 
 
@@ -275,11 +419,19 @@ async def generate_with_ollama(
 async def list_models():
     """List available models."""
     try:
-        if OLLAMA_CLIENT is None:
-            raise Exception("Ollama client not initialized")
-
-        models = OLLAMA_CLIENT.list()
-        return {"models": models["models"], "current_model": MODEL_NAME}
+        if LLM_PROVIDER == LLMProvider.OLLAMA:
+            if OLLAMA_CLIENT is None:
+                raise Exception("Ollama client not initialized")
+            
+            models = OLLAMA_CLIENT.list()
+            return {"models": models["models"], "current_model": MODEL_NAME, "provider": LLM_PROVIDER}
+        else:
+            # For API providers, return the current model
+            return {
+                "models": [{"name": MODEL_NAME}], 
+                "current_model": MODEL_NAME, 
+                "provider": LLM_PROVIDER
+            }
 
     except Exception as e:
         logger.error(f"Failed to list models: {e}")
