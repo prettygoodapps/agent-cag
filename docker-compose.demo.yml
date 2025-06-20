@@ -1,0 +1,20 @@
+version: '3.9'
+
+# Demo configuration with mock LLM for testing
+# This shows how the system works without requiring API keys
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+
+services:
+  # Remove the containerized Ollama service
+  ollama:
+    deploy:
+      replicas: 0
+
+  # Update LLM service for demo mode
+  llm:
+    environment:
+      - PYTHONPATH=/app
+      - LLM_PROVIDER=demo
+      - MODEL_NAME=demo-model
+      - LLM_API_KEY=demo_key
+    depends_on: []

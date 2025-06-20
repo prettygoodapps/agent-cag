@@ -45,6 +45,7 @@ class LLMProvider(str, Enum):
     GROQ = "groq"
     ANTHROPIC = "anthropic"
     GENERIC_OPENAI = "generic_openai"
+    DEMO = "demo"
 
 
 class GenerationRequest(BaseModel):
@@ -119,6 +120,8 @@ def initialize_llm():
         initialize_ollama()
     elif LLM_PROVIDER in [LLMProvider.OPENAI, LLMProvider.GROQ, LLMProvider.ANTHROPIC, LLMProvider.GENERIC_OPENAI]:
         initialize_openai_compatible()
+    elif LLM_PROVIDER == LLMProvider.DEMO:
+        logger.info("Demo mode enabled - no external API required")
     else:
         raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}")
 
@@ -242,6 +245,9 @@ async def health_check():
             # Test connection to Ollama
             models = OLLAMA_CLIENT.list()
             available_models = [model["name"] for model in models["models"]]
+        elif LLM_PROVIDER == LLMProvider.DEMO:
+            # Demo mode - always healthy
+            available_models = ["demo-model"]
         else:
             if OPENAI_CLIENT is None:
                 raise Exception("OpenAI client not initialized")
@@ -276,6 +282,14 @@ async def generate_text(request: GenerationRequest):
         with REQUEST_DURATION.time():
             if LLM_PROVIDER == LLMProvider.OLLAMA:
                 response = await generate_with_ollama(
+                    prompt=request.text,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    system_prompt=request.system_prompt,
+                )
+            elif LLM_PROVIDER == LLMProvider.DEMO:
+                response = await generate_with_demo(
                     prompt=request.text,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
@@ -363,8 +377,94 @@ async def generate_with_ollama(
         }
 
 
+async def generate_with_demo(
+    prompt: str, max_tokens: int = 1000, temperature: float = 0.7,
+    top_p: float = 0.9, system_prompt: Optional[str] = None
+) -> Dict[str, Any]:
+    """Generate text using demo mode (no external API required)."""
+    import re
+    import random
+    
+    # Simple rule-based responses for demo purposes
+    prompt_lower = prompt.lower()
+    
+    # Math questions
+    math_pattern = r'(\d+)\s*[\+\-\*\/]\s*(\d+)'
+    math_match = re.search(math_pattern, prompt)
+    if math_match or any(word in prompt_lower for word in ['calculate', 'math', 'add', 'subtract', 'multiply', 'divide']):
+        if '2+2' in prompt or '2 + 2' in prompt:
+            response_text = "2 + 2 = 4. This is a basic arithmetic operation where we add two numbers together."
+        elif math_match:
+            try:
+                # Simple calculator for demo
+                expr = math_match.group(0)
+                result = eval(expr)  # Safe for demo with simple expressions
+                response_text = f"The answer to {expr} is {result}."
+            except:
+                response_text = "I can help with basic math operations. Could you please rephrase your question?"
+        else:
+            response_text = "I can help with basic math operations like addition, subtraction, multiplication, and division."
+    
+    # Greeting responses
+    elif any(word in prompt_lower for word in ['hello', 'hi', 'hey', 'greetings']):
+        greetings = [
+            "Hello! I'm a demo AI assistant. How can I help you today?",
+            "Hi there! I'm running in demo mode. What would you like to know?",
+            "Greetings! I'm here to help with your questions in demo mode."
+        ]
+        response_text = random.choice(greetings)
+    
+    # Help/about responses
+    elif any(word in prompt_lower for word in ['help', 'what can you do', 'about', 'who are you']):
+        response_text = ("I'm a demo AI assistant running in Agent CAG. I can help with basic questions, "
+                        "simple math, and provide information. This is a demonstration mode that doesn't "
+                        "require external API keys.")
+    
+    # Weather (mock response)
+    elif any(word in prompt_lower for word in ['weather', 'temperature', 'forecast']):
+        response_text = ("I'm in demo mode and don't have access to real weather data. "
+                        "For actual weather information, you'd need to configure a real LLM provider.")
+    
+    # Programming questions
+    elif any(word in prompt_lower for word in ['code', 'programming', 'python', 'javascript', 'function']):
+        response_text = ("I can discuss programming concepts in demo mode. For detailed code assistance, "
+                        "consider using a full LLM provider like OpenAI or Groq.")
+    
+    # Default response
+    else:
+        responses = [
+            f"Thank you for your question: '{prompt}'. I'm running in demo mode, so my responses are limited.",
+            f"I understand you're asking about '{prompt}'. In demo mode, I provide basic responses.",
+            f"Your question '{prompt}' is interesting. This is a demo response to show the system is working.",
+        ]
+        response_text = random.choice(responses)
+    
+    # Add some variation based on temperature
+    if temperature > 0.8:
+        response_text += " (High creativity mode enabled!)"
+    elif temperature < 0.3:
+        response_text += " (Focused response mode.)"
+    
+    # Estimate token count
+    tokens_used = len(response_text.split()) + len(prompt.split())
+    
+    return {
+        "text": response_text,
+        "tokens_used": tokens_used,
+        "metadata": {
+            "provider": "demo",
+            "model": "demo-model",
+            "temperature": temperature,
+            "top_p": top_p,
+            "demo_mode": True,
+            "prompt_length": len(prompt),
+            "response_length": len(response_text),
+        },
+    }
+
+
 async def generate_with_openai_compatible(
-    prompt: str, max_tokens: int = 1000, temperature: float = 0.7, 
+    prompt: str, max_tokens: int = 1000, temperature: float = 0.7,
     top_p: float = 0.9, system_prompt: Optional[str] = None
 ) -> Dict[str, Any]:
     """Generate text using OpenAI-compatible API."""
@@ -425,11 +525,18 @@ async def list_models():
             
             models = OLLAMA_CLIENT.list()
             return {"models": models["models"], "current_model": MODEL_NAME, "provider": LLM_PROVIDER}
+        elif LLM_PROVIDER == LLMProvider.DEMO:
+            # Demo mode - return demo model info
+            return {
+                "models": [{"name": "demo-model", "size": "0B", "digest": "demo", "modified_at": "2024-01-01T00:00:00Z"}],
+                "current_model": "demo-model",
+                "provider": LLM_PROVIDER
+            }
         else:
             # For API providers, return the current model
             return {
-                "models": [{"name": MODEL_NAME}], 
-                "current_model": MODEL_NAME, 
+                "models": [{"name": MODEL_NAME}],
+                "current_model": MODEL_NAME,
                 "provider": LLM_PROVIDER
             }
 
