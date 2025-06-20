@@ -39,9 +39,8 @@ tests/
 │   └── test_security.py
 ├── monitoring/             # Monitoring tests
 │   └── test_monitoring.py
-├── load/                   # Load tests
-│   └── test_load.py
-└── conftest.py            # Shared test fixtures
+└── load/                   # Load tests
+    └── test_load.py
 
 integration_tests/          # Legacy integration tests
 └── test_full_pipeline.py
@@ -363,8 +362,8 @@ jobs:
 ### Docker Testing
 
 ```bash
-# Build test image
-docker build -t agent-cag-test -f Dockerfile.test .
+# Build test image using main Dockerfile
+docker build -t agent-cag-test .
 
 # Run tests in container
 docker run --rm agent-cag-test python run_tests.py --all
@@ -473,10 +472,10 @@ pytest --keep-artifacts
 
 ### Test Data
 
-Test data is generated dynamically or stored in:
-- `tests/fixtures/`: Static test data
-- `tests/data/`: Sample files for testing
-- In-memory: Temporary test data
+Test data is generated dynamically:
+- In-memory: Temporary test data created during test execution
+- Dynamic fixtures: Test data generated using pytest fixtures
+- Mock data: Simulated responses for external service testing
 
 ## Best Practices
 
