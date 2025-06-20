@@ -24,11 +24,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics
-REQUEST_COUNT = Counter('tts_requests_total', 'Total TTS requests')
-REQUEST_DURATION = Histogram('tts_request_duration_seconds', 'TTS request duration')
-SYNTHESIS_COUNT = Counter('synthesis_total', 'Total syntheses')
-SARDAUKAR_COUNT = Counter('sardaukar_translations_total', 'Total Sardaukar translations')
-ERROR_COUNT = Counter('tts_errors_total', 'Total TTS errors', ['error_type'])
+REQUEST_COUNT = Counter("tts_requests_total", "Total TTS requests")
+REQUEST_DURATION = Histogram("tts_request_duration_seconds", "TTS request duration")
+SYNTHESIS_COUNT = Counter("synthesis_total", "Total syntheses")
+SARDAUKAR_COUNT = Counter(
+    "sardaukar_translations_total", "Total Sardaukar translations"
+)
+ERROR_COUNT = Counter("tts_errors_total", "Total TTS errors", ["error_type"])
 
 # Global configuration
 PIPER_MODEL = None
@@ -37,6 +39,7 @@ OUTPUT_DIR = "/app/output"
 
 class SynthesisRequest(BaseModel):
     """Request model for speech synthesis."""
+
     text: str
     voice: Optional[str] = None
     use_sardaukar: bool = False
@@ -44,6 +47,7 @@ class SynthesisRequest(BaseModel):
 
 class SynthesisResponse(BaseModel):
     """Response model for speech synthesis."""
+
     audio_url: str
     duration: Optional[float] = None
     format: str = "wav"
@@ -55,16 +59,16 @@ class SynthesisResponse(BaseModel):
 def initialize_piper():
     """Initialize Piper TTS model."""
     global PIPER_MODEL
-    
+
     model_name = os.getenv("PIPER_MODEL", "en_US-lessac-medium")
     logger.info(f"Initializing Piper TTS with model: {model_name}")
-    
+
     try:
         # In a real implementation, you would download and load the Piper model
         # For now, we'll use a placeholder
         PIPER_MODEL = model_name
         logger.info("Piper TTS initialized successfully")
-        
+
     except Exception as e:
         logger.error(f"Failed to initialize Piper TTS: {e}")
         raise
@@ -74,7 +78,7 @@ def initialize_piper():
 app = FastAPI(
     title="Agent CAG TTS Service",
     description="Text-to-Speech with optional Sardaukar translation",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 
@@ -82,18 +86,18 @@ app = FastAPI(
 async def startup_event():
     """Initialize the service."""
     logger.info("Starting TTS Service...")
-    
+
     # Initialize Piper TTS
     initialize_piper()
-    
+
     # Create output directory
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    
+
     # Start Prometheus metrics server if enabled
     if os.getenv("METRICS_ENABLED", "false").lower() == "true":
         start_http_server(8083)
         logger.info("Prometheus metrics server started on port 8083")
-    
+
     logger.info("TTS Service started successfully")
 
 
@@ -103,12 +107,12 @@ async def health_check():
     try:
         if PIPER_MODEL is None:
             raise Exception("Piper TTS not initialized")
-        
+
         return {
             "status": "healthy",
             "service": "agent-tts",
             "model": PIPER_MODEL,
-            "sardaukar_enabled": os.getenv("SARDAUKAR_TRANSLATOR_URL") is not None
+            "sardaukar_enabled": os.getenv("SARDAUKAR_TRANSLATOR_URL") is not None,
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
@@ -126,45 +130,49 @@ async def synthesize_speech(request: SynthesisRequest):
     """Synthesize speech from text."""
     try:
         REQUEST_COUNT.inc()
-        
+
         with REQUEST_DURATION.time():
             original_text = request.text
             final_text = original_text
             used_sardaukar = False
-            
+
             # Translate to Sardaukar if requested
             if request.use_sardaukar:
                 try:
                     final_text = await translate_to_sardaukar(original_text)
                     used_sardaukar = True
                     SARDAUKAR_COUNT.inc()
-                    logger.info(f"Translated to Sardaukar: '{original_text}' -> '{final_text}'")
+                    logger.info(
+                        f"Translated to Sardaukar: '{original_text}' -> '{final_text}'"
+                    )
                 except Exception as e:
-                    logger.warning(f"Sardaukar translation failed, using original text: {e}")
+                    logger.warning(
+                        f"Sardaukar translation failed, using original text: {e}"
+                    )
                     final_text = original_text
                     used_sardaukar = False
-            
+
             # Generate speech
             audio_file_path = await generate_speech(final_text, request.voice)
-            
+
             # Calculate duration
             duration = get_audio_duration(audio_file_path)
-            
+
             # Generate URL for the audio file
             audio_filename = os.path.basename(audio_file_path)
             audio_url = f"/audio/{audio_filename}"
-            
+
             SYNTHESIS_COUNT.inc()
-            
+
             return SynthesisResponse(
                 audio_url=audio_url,
                 duration=duration,
                 format="wav",
                 original_text=original_text,
                 final_text=final_text,
-                used_sardaukar=used_sardaukar
+                used_sardaukar=used_sardaukar,
             )
-            
+
     except Exception as e:
         ERROR_COUNT.labels(error_type=type(e).__name__).inc()
         logger.error(f"Speech synthesis failed: {e}")
@@ -175,34 +183,27 @@ async def synthesize_speech(request: SynthesisRequest):
 async def get_audio_file(filename: str):
     """Serve generated audio files."""
     file_path = os.path.join(OUTPUT_DIR, filename)
-    
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Audio file not found")
-    
-    return FileResponse(
-        file_path,
-        media_type="audio/wav",
-        filename=filename
-    )
+
+    return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
 
 async def translate_to_sardaukar(text: str) -> str:
     """Translate text to Sardaukar using the translator service."""
     sardaukar_url = os.getenv("SARDAUKAR_TRANSLATOR_URL")
-    
+
     if not sardaukar_url:
         raise Exception("Sardaukar translator URL not configured")
-    
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             f"{sardaukar_url}/api/translate",
-            json={
-                "text": text,
-                "include_phonetics": False
-            }
+            json={"text": text, "include_phonetics": False},
         )
         response.raise_for_status()
-        
+
         result = response.json()
         return result.get("sardaukar", text)
 
@@ -213,13 +214,13 @@ async def generate_speech(text: str, voice: Optional[str] = None) -> str:
         # Generate unique filename
         audio_id = str(uuid.uuid4())
         output_path = os.path.join(OUTPUT_DIR, f"{audio_id}.wav")
-        
+
         # Use espeak-ng as a fallback TTS engine
         # In a real implementation, you would use Piper TTS
         await generate_speech_with_espeak(text, output_path)
-        
+
         return output_path
-        
+
     except Exception as e:
         logger.error(f"Speech generation failed: {e}")
         raise
@@ -231,19 +232,22 @@ async def generate_speech_with_espeak(text: str, output_path: str):
         # Use espeak-ng to generate speech
         cmd = [
             "espeak-ng",
-            "-s", "150",  # Speed
-            "-v", "en+f3",  # Voice
-            "-w", output_path,  # Output file
-            text
+            "-s",
+            "150",  # Speed
+            "-v",
+            "en+f3",  # Voice
+            "-w",
+            output_path,  # Output file
+            text,
         ]
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        
+
         if result.returncode != 0:
             raise Exception(f"espeak-ng failed: {result.stderr}")
-        
+
         logger.info(f"Generated speech file: {output_path}")
-        
+
     except subprocess.CalledProcessError as e:
         logger.error(f"espeak-ng command failed: {e}")
         raise
@@ -273,14 +277,14 @@ async def list_voices():
                 "id": "en_US-lessac-medium",
                 "name": "Lessac (English US)",
                 "language": "en-US",
-                "gender": "female"
+                "gender": "female",
             },
             {
                 "id": "en_US-ryan-medium",
                 "name": "Ryan (English US)",
                 "language": "en-US",
-                "gender": "male"
-            }
+                "gender": "male",
+            },
         ]
     }
 
@@ -290,18 +294,11 @@ async def global_exception_handler(request, exc):
     """Global exception handler."""
     ERROR_COUNT.labels(error_type=type(exc).__name__).inc()
     logger.error(f"Unhandled exception: {exc}")
-    
-    return {
-        "detail": "Internal server error"
-    }
+
+    return {"detail": "Internal server error"}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8003,
-        reload=True,
-        log_level="info"
-    )
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=True, log_level="info")

@@ -81,13 +81,14 @@ services:
     networks:
       - agent-network
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # GPU support disabled for compatibility
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
@@ -105,7 +106,7 @@ services:
       - "8002:8002"
     environment:
       - PYTHONPATH=/app
-      - MODEL_NAME=llama3
+      - MODEL_NAME=phi3:mini
       - MODEL_PATH=/app/models
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODE=container

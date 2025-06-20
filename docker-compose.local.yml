@@ -14,7 +14,7 @@ services:
   llm:
     environment:
       - PYTHONPATH=/app
-      - MODEL_NAME=llama3
+      - MODEL_NAME=phi3:mini
       - MODEL_PATH=/app/models
       - OLLAMA_MODE=local
     depends_on: []
