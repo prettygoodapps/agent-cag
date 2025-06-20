@@ -34,8 +34,8 @@ make check-system
 # Start lightweight profile (DuckDB + containerized Ollama)
 make up-light
 
-# Start full profile (ChromaDB + Neo4j + containerized Ollama)
-make up-full
+# Start full profile (requires docker-compose.full.yml - not currently implemented)
+# make up-full
 
 # Start with local Ollama (requires Ollama installed on host)
 make up-local
@@ -101,13 +101,9 @@ Features:
 
 ### Full Profile
 
-Designed for production deployments requiring scalability:
+**Note: Full profile is currently not implemented. The `docker-compose.full.yml` file does not exist.**
 
-```bash
-make up-full
-```
-
-Features:
+For future implementation, this would be designed for production deployments requiring scalability with:
 - ChromaDB for vector similarity search
 - Neo4j for graph relationships
 - Containerized Ollama with GPU support
@@ -120,7 +116,7 @@ Adds comprehensive observability to any profile:
 
 ```bash
 make up-monitoring          # Lightweight + monitoring
-make up-full-monitoring     # Full + monitoring
+# make up-full-monitoring   # Full + monitoring (requires full profile implementation)
 ```
 
 Features:
@@ -420,11 +416,12 @@ make push REGISTRY=your-registry.com/agent-cag
 
 ### Kubernetes
 
-Example Kubernetes deployment files are provided in `k8s/` directory:
+**Note: Kubernetes deployment files are not currently implemented. The `k8s/` directory does not exist.**
 
+For future implementation, Kubernetes deployment would be available via:
 ```bash
-# Deploy to Kubernetes
-make deploy-cloud
+# Deploy to Kubernetes (when implemented)
+# make deploy-cloud
 ```
 
 ### Environment Variables
